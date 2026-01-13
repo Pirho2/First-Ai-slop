@@ -1,1 +1,13 @@
 
+# render.yaml
+
+# Definiuje, że jest to plik manifestu Render
+yaml-spec: 1
+
+# Lista usług do wdrożenia
+services:
+  # Tutaj znajdują się definicje poszczególnych usług
+  - type: web
+    # ... inne parametry usługi webowej ...
+  - type: database
+    # ... inne parametry bazy danych ...
