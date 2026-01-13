@@ -9,5 +9,5 @@ services:
   # Tutaj znajdują się definicje poszczególnych usług
   - type: web
     # ... inne parametry usługi webowej ...
-  - type: database
+
     # ... inne parametry bazy danych ...
