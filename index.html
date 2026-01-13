@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equilion - Dziennik Zdrowia Psychicznego</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        body { margin: 0; padding: 0; overflow-x: hidden; }
+        @keyframes gradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        .animate-gradient { background-size: 200% 200%; animation: gradient 15s ease infinite; }
+        input[type="range"] { -webkit-appearance: none; appearance: none; height: 12px; border-radius: 6px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #06b6d4; cursor: pointer; }
+        input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: #06b6d4; cursor: pointer; border: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } = Recharts;
+        
+        // Icons (using lucide via CDN)
+        const Icon = ({ name, size = 20, color = "currentColor", ...props }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, []);
+            return <i data-lucide={name} style={{ width: size, height: size, color }} {...props}></i>;
+        };
+
+        const emotions = [
+            { id: 'happy', label: 'Szczęśliwy', icon: '😊', color: '#10b981' },
+            { id: 'sad', label: 'Smutny', icon: '😢', color: '#3b82f6' },
+            { id: 'anxious', label: 'Zaniepokojony', icon: '😰', color: '#f59e0b' },
+            { id: 'angry', label: 'Zły', icon: '😠', color: '#ef4444' },
+            { id: 'calm', label: 'Spokojny', icon: '😌', color: '#8b5cf6' },
+            { id: 'excited', label: 'Podekscytowany', icon: '🤩', color: '#ec4899' },
+            { id: 'tired', label: 'Zmęczony', icon: '😴', color: '#6b7280' },
+            { id: 'energetic', label: 'Energiczny', icon: '⚡', color: '#eab308' }
+        ];
+
+        const tags = [
+            { id: 'work', label: 'Praca', color: '#3b82f6' },
+            { id: 'relationships', label: 'Relacje', color: '#ec4899' },
+            { id: 'health', label: 'Zdrowie', color: '#10b981' },
+            { id: 'sport', label: 'Sport', color: '#f59e0b' },
+            { id: 'hobby', label: 'Hobby', color: '#8b5cf6' }
+        ];
+
+        const blogs = [
+            { id: 1, title: '5 sposobów na redukcję stresu', excerpt: 'Odkryj proste techniki które pomogą Ci lepiej radzić sobie ze stresem w codziennym życiu. Medytacja, głębokie oddychanie i mindfulness to tylko niektóre z metod...', date: '2025-01-10', category: 'Psychika' },
+            { id: 2, title: 'Jak budować zdrowe nawyki?', excerpt: 'Naukowe podejście do tworzenia nawyków które zostają z nami na dłużej. Kluczem jest konsekwencja i małe kroki...', date: '2025-01-08', category: 'Lifestyle' },
+            { id: 3, title: 'Znaczenie snu dla zdrowia psychicznego', excerpt: 'Dlaczego 8 godzin snu to nie mit a konieczność dla Twojego umysłu. Sen to czas regeneracji mózgu...', date: '2025-01-05', category: 'Zdrowie' }
+        ];
+
+        function App() {
+            const [user, setUser] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('currentUser')); } catch { return null; }
+            });
+            const [page, setPage] = useState('landing');
+            const [entries, setEntries] = useState([]);
+            const [entry, setEntry] = useState({ mood: 50, emotions: [], tags: [], stress: 50, energy: 50, sleep: 7, notes: '' });
+            const [editing, setEditing] = useState(null);
+
+            useEffect(() => {
+                if (user) {
+                    try {
+                        const saved = JSON.parse(localStorage.getItem(`entries_${user.id}`)) || [];
+                        setEntries(saved);
+                        setPage('dashboard');
+                    } catch { setEntries([]); }
+                }
+            }, [user]);
+
+            useEffect(() => {
+                if (user) {
+                    try { localStorage.setItem(`entries_${user.id}`, JSON.stringify(entries)); } catch {}
+                }
+            }, [entries, user]);
+
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
+
+            const moodEmoji = (m) => m < 20 ? '😢' : m < 40 ? '😕' : m < 60 ? '😐' : m < 80 ? '🙂' : '😄';
+            const moodColor = (m) => m < 20 ? '#ef4444' : m < 40 ? '#f59e0b' : m < 60 ? '#eab308' : m < 80 ? '#10b981' : '#22c55e';
+
+            const streak = () => {
+                if (!entries.length) return 0;
+                const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+                let count = 1;
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const last = new Date(sorted[0].date); last.setHours(0, 0, 0, 0);
+                if (Math.floor((today - last) / 86400000) > 1) return 0;
+                for (let i = 1; i < sorted.length; i++) {
+                    const curr = new Date(sorted[i - 1].date); curr.setHours(0, 0, 0, 0);
+                    const prev = new Date(sorted[i].date); prev.setHours(0, 0, 0, 0);
+                    if (Math.floor((curr - prev) / 86400000) === 1) count++; else break;
+                }
+                return count;
+            };
+
+            const avgMood = () => !entries.length ? 0 : Math.round(entries.reduce((s, e) => s + e.mood, 0) / entries.length);
+
+            const login = (email, pw) => {
+                try {
+                    const users = JSON.parse(localStorage.getItem('users')) || [];
+                    const found = users.find(u => u.email === email && u.password === pw);
+                    if (found) {
+                        setUser(found);
+                        localStorage.setItem('currentUser', JSON.stringify(found));
+                        setPage('dashboard');
+                    } else alert('Nieprawidłowy email lub hasło');
+                } catch { alert('Błąd logowania'); }
+            };
+
+            const register = (email, pw, name) => {
+                try {
+                    const users = JSON.parse(localStorage.getItem('users')) || [];
+                    if (users.find(u => u.email === email)) { alert('Użytkownik już istnieje'); return; }
+                    const newUser = { id: Date.now().toString(), email, password: pw, name };
+                    users.push(newUser);
+                    localStorage.setItem('users', JSON.stringify(users));
+                    setUser(newUser);
+                    localStorage.setItem('currentUser', JSON.stringify(newUser));
+                    setPage('dashboard');
+                } catch { alert('Błąd rejestracji'); }
+            };
+
+            const logout = () => {
+                setUser(null);
+                localStorage.removeItem('currentUser');
+                setPage('landing');
+            };
+
+            const save = () => {
+                if (editing) {
+                    setEntries(entries.map(e => e.id === editing.id ? { ...entry, id: editing.id, date: editing.date } : e));
+                    setEditing(null);
+                } else {
+                    setEntries([{ ...entry, id: Date.now().toString(), date: new Date().toISOString() }, ...entries]);
+                }
+                setEntry({ mood: 50, emotions: [], tags: [], stress: 50, energy: 50, sleep: 7, notes: '' });
+                setPage('dashboard');
+            };
+
+            const del = (id) => { if (window.confirm('Usunąć wpis?')) setEntries(entries.filter(e => e.id !== id)); };
+            const edit = (e) => { setEntry(e); setEditing(e); setPage('new-entry'); };
+
+            const exportData = () => {
+                const data = { user, entries, exportDate: new Date().toISOString() };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `equilion-backup-${Date.now()}.json`;
+                a.click();
+            };
+
+            const importData = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        if (data.entries) { setEntries(data.entries); alert('Zaimportowano!'); }
+                    } catch { alert('Błąd importu'); }
+                };
+                reader.readAsText(file);
+            };
+
+            const stats = () => {
+                const last30 = entries.slice(0, 30).reverse();
+                const line = last30.map((e, i) => ({ day: i + 1, mood: e.mood, stress: e.stress, energy: e.energy }));
+                const emoCounts = {};
+                entries.forEach(e => e.emotions.forEach(em => emoCounts[em] = (emoCounts[em] || 0) + 1));
+                const pie = Object.entries(emoCounts).map(([k, v]) => {
+                    const em = emotions.find(e => e.id === k);
+                    return { name: em?.label || k, value: v, fill: em?.color || '#666' };
+                });
+                const tagCounts = {};
+                entries.forEach(e => e.tags.forEach(t => tagCounts[t] = (tagCounts[t] || 0) + 1));
+                const bar = Object.entries(tagCounts).map(([k, v]) => {
+                    const tag = tags.find(t => t.id === k);
+                    return { name: tag?.label || k, count: v };
+                });
+                return { line, pie, bar };
+            };
+
+            const NavButton = ({ icon, label, p, badge }) => (
+                <button onClick={() => setPage(p)} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${page === p ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/5 text-gray-300'}`}>
+                    <Icon name={icon} size={20} />
+                    <span className="hidden md:inline">{label}</span>
+                    {badge && <span className="ml-auto bg-cyan-500 text-white text-xs px-2 py-1 rounded-full">{badge}</span>}
+                </button>
+            );
+
+            const Sidebar = () => (
+                <div className="w-64 bg-white/5 border-r border-white/10 p-6 hidden md:block">
+                    <div className="mb-8">
+                        <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">Equilion</h1>
+                        <p className="text-sm text-gray-400 mt-1">Cześć, {user?.name}!</p>
+                    </div>
+                    <nav className="space-y-2">
+                        <NavButton icon="home" label="Dashboard" p="dashboard" />
+                        <NavButton icon="plus" label="Nowy wpis" p="new-entry" />
+                        <NavButton icon="history" label="Historia" p="history" badge={entries.length} />
+                        <NavButton icon="bar-chart-3" label="Statystyki" p="stats" />
+                        <NavButton icon="book-open" label="Blog" p="blog" />
+                        <NavButton icon="user" label="Profil" p="profile" />
+                    </nav>
+                    <button onClick={logout} className="mt-8 flex items-center gap-3 px-4 py-3 w-full rounded-lg hover:bg-red-500/20 text-red-400 transition">
+                        <Icon name="log-out" size={20} />
+                        <span>Wyloguj</span>
+                    </button>
+                </div>
+            );
+
+            if (page === 'landing') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 animate-gradient text-white p-4">
+                        <div className="container mx-auto py-20">
+                            <div className="text-center mb-16">
+                                <div className="text-6xl mb-6">⚡</div>
+                                <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">Equilion</h1>
+                                <p className="text-xl text-gray-300 mb-8">Energia do budowania wewnętrznej równowagi</p>
+                                <p className="text-gray-400 max-w-2xl mx-auto mb-12">Bezpieczny, prywatny dziennik samopoczucia. Twoje dane pozostają tylko w Twojej przeglądarce - nigdy nie są wysyłane na serwer.</p>
+                                <div className="flex gap-4 justify-center flex-wrap">
+                                    <button onClick={() => setPage('register')} className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition shadow-lg shadow-cyan-500/50">Rozpocznij teraz</button>
+                                    <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm rounded-lg font-semibold hover:bg-white/20 transition">Mam już konto</button>
+                                </div>
+                            </div>
+                            <div className="grid md:grid-cols-3 gap-8">
+                                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-cyan-500/50 transition">
+                                    <div className="text-4xl mb-4">🔒</div>
+                                    <h3 className="text-xl font-semibold mb-2">Maksymalna Prywatność</h3>
+                                    <p className="text-gray-400">Dane nigdy nie opuszczają Twojego urządzenia. Zero serwerów, zero śledzenia.</p>
+                                </div>
+                                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-cyan-500/50 transition">
+                                    <div className="text-4xl mb-4">📊</div>
+                                    <h3 className="text-xl font-semibold mb-2">Inteligentne Analizy</h3>
+                                    <p className="text-gray-400">Wykresy, trendy i insights pomagające zrozumieć Twoje samopoczucie.</p>
+                                </div>
+                                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-cyan-500/50 transition">
+                                    <div className="text-4xl mb-4">✨</div>
+                                    <h3 className="text-xl font-semibold mb-2">Piękny Design</h3>
+                                    <p className="text-gray-400">Przyjemne w użyciu narzędzie, które chce się otwierać codziennie.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'login' || page === 'register') {
+                const [form, setForm] = useState({ email: '', password: '', name: '' });
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex items-center justify-center p-4">
+                        <div className="bg-white/5 backdrop-blur-sm p-8 rounded-xl border border-white/10 w-full max-w-md shadow-2xl">
+                            <h2 className="text-3xl font-bold mb-6 text-center">{page === 'login' ? 'Logowanie' : 'Rejestracja'}</h2>
+                            <div className="space-y-4">
+                                {page === 'register' && (
+                                    <div>
+                                        <label className="block mb-2 text-sm font-medium">Imię</label>
+                                        <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-3 bg-white/10 rounded-lg border border-white/20 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 outline-none text-white transition" placeholder="Jan" />
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block mb-2 text-sm font-medium">Email</label>
+                                    <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-3 bg-white/10 rounded-lg border border-white/20 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 outline-none text-white transition" placeholder="jan@example.com" />
+                                </div>
+                                <div>
+                                    <label className="block mb-2 text-sm font-medium">Hasło</label>
+                                    <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full px-4 py-3 bg-white/10 rounded-lg border border-white/20 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 outline-none text-white transition" placeholder="••••••••" />
+                                </div>
+                                <button onClick={() => page === 'login' ? login(form.email, form.password) : register(form.email, form.password, form.name)} className="w-full px-4 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition shadow-lg shadow-cyan-500/50">
+                                    {page === 'login' ? 'Zaloguj się' : 'Utwórz konto'}
+                                </button>
+                                <p className="text-center text-sm text-gray-400">
+                                    {page === 'login' ? 'Nie masz konta? ' : 'Masz już konto? '}
+                                    <button onClick={() => setPage(page === 'login' ? 'register' : 'login')} className="text-cyan-400 hover:underline font-medium">
+                                        {page === 'login' ? 'Zarejestruj się' : 'Zaloguj się'}
+                                    </button>
+                                </p>
+                                <button onClick={() => setPage('landing')} className="w-full text-sm text-gray-400 hover:text-white transition">← Powrót na stronę główną</button>
+                            </div>
+                            <div className="mt-6 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+                                <p className="text-xs text-cyan-300">🔒 Twoje dane są przechowywane tylko lokalnie w przeglądarce. Nie są wysyłane na żaden serwer.</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'dashboard') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex">
+                        <Sidebar />
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-6xl mx-auto">
+                                <h2 className="text-3xl font-bold mb-8">Dashboard</h2>
+                                <div className="grid md:grid-cols-3 gap-6 mb-8">
+                                    <div className="bg-gradient-to-br from-cyan-500/20 to-blue-500/20 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-cyan-500/50 transition">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <Icon name="flame" size={32} color="#fb923c" />
+                                            <span className="text-3xl font-bold">{streak()}</span>
+                                        </div>
+                                        <p className="text-gray-300">Dni z rzędu</p>
+                                        <p className="text-xs text-gray-400 mt-2">Świetna passa! Kontynuuj codzienne wpisy</p>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-purple-500/50 transition">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="text-4xl">{moodEmoji(avgMood())}</div>
+                                            <span className="text-3xl font-bold">{avgMood()}</span>
+                                        </div>
+                                        <p className="text-gray-300">Średni nastrój</p>
+                                        <p className="text-xs text-gray-400 mt-2">Twoje ogólne samopoczucie</p>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-green-500/20 to-teal-500/20 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-green-500/50 transition">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <Icon name="calendar" size={32} color="#10b981" />
+                                            <span className="text-3xl font-bold">{entries.length}</span>
+                                        </div>
+                                        <p className="text-gray-300">Wszystkich wpisów</p>
+                                        <p className="text-xs text-gray-400 mt-2">Twoja historia emocji</p>
+                                    </div>
+                                </div>
+                                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10 mb-8">
+                                    <h3 className="text-xl font-semibold mb-4">Jak się dzisiaj czujesz?</h3>
+                                    <div className="flex items-center gap-4 mb-4">
+                                        <input type="range" min="0" max="100" value={entry.mood} onChange={e => setEntry({ ...entry, mood: parseInt(e.target.value) })} className="flex-1" style={{ background: `linear-gradient(to right, ${moodColor(entry.mood)} ${entry.mood}%, rgba(255,255,255,0.2) ${entry.mood}%)` }} />
+                                        <span className="text-4xl">{moodEmoji(entry.mood)}</span>
+                                        <span className="text-2xl font-bold w-16 text-center">{entry.mood}</span>
+                                    </div>
+                                    <button onClick={() => setPage('new-entry')} className="w-full px-4 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition shadow-lg shadow-cyan-500/50">
+                                        <Icon name="plus" size={20} className="inline mr-2" />
+                                        Dodaj pełny wpis
+                                    </button>
+                                </div>
+                                <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                    <h3 className="text-xl font-semibold mb-4">Ostatnie wpisy</h3>
+                                    {entries.slice(0, 5).length > 0 ? (
+                                        <div className="space-y-3">
+                                            {entries.slice(0, 5).map(e => (
+                                                <div key={e.id} className="p-4 bg-white/5 rounded-lg hover:bg-white/10 transition cursor-pointer border border-white/0 hover:border-cyan-500/50" onClick={() => edit(e)}>
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-3xl">{moodEmoji(e.mood)}</span>
+                                                            <div>
+                                                                <p className="font-semibold">{new Date(e.date).toLocaleDateString('pl-PL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                                                <p className="text-sm text-gray-400 line-clamp-1">{e.notes || 'Brak notatki'}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-2 flex-wrap justify-end">
+                                                            {e.tags.slice(0, 2).map(tid => {
+                                                                const t = tags.find(x => x.id === tid);
+                                                                return <span key={tid} className="px-2 py-1 text-xs rounded-full font-medium" style={{ backgroundColor: t?.color + '40', color: t?.color }}>{t?.label}</span>;
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-12">
+                                            <div className="text-6xl mb-4">📝</div>
+                                            <p className="text-gray-400 mb-4">Brak wpisów. Dodaj swój pierwszy wpis!</p>
+                                            <button onClick={() => setPage('new-entry')} className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition">Rozpocznij teraz</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'new-entry') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex">
+                        <Sidebar />
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-4xl mx-auto">
+                                <h2 className="text-3xl font-bold mb-8">{editing ? 'Edytuj wpis' : 'Nowy wpis'}</h2>
+                                <div className="bg-white/5 backdrop-blur-sm p-8 rounded-xl border border-white/10 space-y-8">
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Nastrój</label>
+                                        <div className="flex items-center gap-4">
+                                            <input type="range" min="0" max="100" value={entry.mood} onChange={e => setEntry({ ...entry, mood: parseInt(e.target.value) })} className="flex-1" style={{ background: `linear-gradient(to right, ${moodColor(entry.mood)} ${entry.mood}%, rgba(255,255,255,0.2) ${entry.mood}%)` }} />
+<span className="text-5xl">{moodEmoji(entry.mood)}</span>
+                                            <span className="text-3xl font-bold w-16 text-center">{entry.mood}</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Emocje</label>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {emotions.map(em => (
+                                                <button key={em.id} onClick={() => setEntry({ ...entry, emotions: entry.emotions.includes(em.id) ? entry.emotions.filter(x => x !== em.id) : [...entry.emotions, em.id] })} className={`p-4 rounded-lg border-2 transition hover:scale-105 ${entry.emotions.includes(em.id) ? 'border-cyan-500 bg-cyan-500/20 shadow-lg shadow-cyan-500/30' : 'border-white/20 hover:border-white/40'}`}>
+                                                    <div className="text-3xl mb-2">{em.icon}</div>
+                                                    <div className="text-sm font-medium">{em.label}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Tagi</label>
+                                        <div className="flex flex-wrap gap-3">
+                                            {tags.map(t => (
+                                                <button key={t.id} onClick={() => setEntry({ ...entry, tags: entry.tags.includes(t.id) ? entry.tags.filter(x => x !== t.id) : [...entry.tags, t.id] })} className="px-4 py-2 rounded-lg transition hover:scale-105 font-medium" style={{ backgroundColor: entry.tags.includes(t.id) ? t.color : t.color + '40', color: 'white', boxShadow: entry.tags.includes(t.id) ? `0 4px 20px ${t.color}40` : 'none' }}>
+                                                    {t.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Poziom stresu</label>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-2xl">😌</span>
+                                            <input type="range" min="0" max="100" value={entry.stress} onChange={e => setEntry({ ...entry, stress: parseInt(e.target.value) })} className="flex-1" style={{ background: `linear-gradient(to right, #10b981 0%, #f59e0b 50%, #ef4444 100%)` }} />
+                                            <span className="text-2xl">😰</span>
+                                            <span className="font-bold w-12 text-center">{entry.stress}</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Poziom energii</label>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-2xl">😴</span>
+                                            <input type="range" min="0" max="100" value={entry.energy} onChange={e => setEntry({ ...entry, energy: parseInt(e.target.value) })} className="flex-1" style={{ background: `linear-gradient(to right, #6b7280 0%, #eab308 100%)` }} />
+                                            <span className="text-2xl">⚡</span>
+                                            <span className="font-bold w-12 text-center">{entry.energy}</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Sen (godziny)</label>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-2xl">🌙</span>
+                                            <input type="range" min="0" max="12" step="0.5" value={entry.sleep} onChange={e => setEntry({ ...entry, sleep: parseFloat(e.target.value) })} className="flex-1" />
+                                            <span className="text-2xl font-bold w-16 text-center">{entry.sleep}h</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block mb-4 text-lg font-semibold">Notatki</label>
+                                        <textarea value={entry.notes} onChange={e => setEntry({ ...entry, notes: e.target.value })} className="w-full px-4 py-3 bg-white/10 rounded-lg border border-white/20 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 outline-none text-white min-h-32 resize-y transition" placeholder="Jak się dzisiaj czujesz? Co się wydarzyło? Co jest na Twoim sercu?" />
+                                        <p className="text-xs text-gray-400 mt-2">🔒 Twoje notatki są prywatne i bezpieczne</p>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <button onClick={save} className="flex-1 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition shadow-lg shadow-cyan-500/50">
+                                            <Icon name="save" size={20} className="inline mr-2" />
+                                            Zapisz wpis
+                                        </button>
+                                        <button onClick={() => { setPage('dashboard'); setEditing(null); setEntry({ mood: 50, emotions: [], tags: [], stress: 50, energy: 50, sleep: 7, notes: '' }); }} className="px-6 py-3 bg-white/10 rounded-lg hover:bg-white/20 transition">
+                                            Anuluj
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'history') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex">
+                        <Sidebar />
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-6xl mx-auto">
+                                <h2 className="text-3xl font-bold mb-8">Historia wpisów</h2>
+                                {entries.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {entries.map(e => (
+                                            <div key={e.id} className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10 hover:border-cyan-500/50 transition">
+                                                <div className="flex items-start justify-between mb-4">
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="text-5xl">{moodEmoji(e.mood)}</span>
+                                                        <div>
+                                                            <p className="text-xl font-semibold">{new Date(e.date).toLocaleDateString('pl-PL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                                            <p className="text-sm text-gray-400">{new Date(e.date).toLocaleTimeString('pl-PL')}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => edit(e)} className="p-2 hover:bg-cyan-500/20 rounded-lg transition" title="Edytuj">
+                                                            <Icon name="edit-2" size={20} color="#06b6d4" />
+                                                        </button>
+                                                        <button onClick={() => del(e.id)} className="p-2 hover:bg-red-500/20 rounded-lg transition" title="Usuń">
+                                                            <Icon name="trash-2" size={20} color="#ef4444" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="mb-4">
+                                                    <div className="flex gap-2 mb-3 flex-wrap">
+                                                        {e.emotions.map(eid => {
+                                                            const em = emotions.find(x => x.id === eid);
+                                                            return <span key={eid} className="text-2xl" title={em?.label}>{em?.icon}</span>;
+                                                        })}
+                                                    </div>
+                                                    <div className="flex gap-2 flex-wrap">
+                                                        {e.tags.map(tid => {
+                                                            const t = tags.find(x => x.id === tid);
+                                                            return <span key={tid} className="px-3 py-1 text-sm rounded-full font-medium" style={{ backgroundColor: t?.color + '40', color: t?.color }}>{t?.label}</span>;
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                {e.notes && (
+                                                    <div className="bg-white/5 p-4 rounded-lg">
+                                                        <p className="text-gray-300 whitespace-pre-wrap">{e.notes}</p>
+                                                    </div>
+                                                )}
+                                                <div className="grid grid-cols-3 gap-4 mt-4">
+                                                    <div className="bg-white/5 p-3 rounded-lg">
+                                                        <p className="text-xs text-gray-400 mb-1">Stres</p>
+                                                        <p className="text-lg font-bold">{e.stress}</p>
+                                                    </div>
+                                                    <div className="bg-white/5 p-3 rounded-lg">
+                                                        <p className="text-xs text-gray-400 mb-1">Energia</p>
+                                                        <p className="text-lg font-bold">{e.energy}</p>
+                                                    </div>
+                                                    <div className="bg-white/5 p-3 rounded-lg">
+                                                        <p className="text-xs text-gray-400 mb-1">Sen</p>
+                                                        <p className="text-lg font-bold">{e.sleep}h</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-white/5 backdrop-blur-sm p-12 rounded-xl border border-white/10 text-center">
+                                        <div className="text-6xl mb-4">📭</div>
+                                        <p className="text-xl text-gray-400 mb-4">Brak wpisów w historii</p>
+                                        <button onClick={() => setPage('new-entry')} className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition">Dodaj pierwszy wpis</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'stats') {
+                const { line, pie, bar } = stats();
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex">
+                        <Sidebar />
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-6xl mx-auto">
+                                <h2 className="text-3xl font-bold mb-8">Statystyki</h2>
+                                {entries.length > 0 ? (
+                                    <div className="space-y-8">
+                                        <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                            <h3 className="text-xl font-semibold mb-4">Nastrój w ostatnich 30 dniach</h3>
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <LineChart data={line}>
+                                                    <XAxis dataKey="day" stroke="#94a3b8" />
+                                                    <YAxis stroke="#94a3b8" />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+                                                    <Legend />
+                                                    <Line type="monotone" dataKey="mood" stroke="#06b6d4" strokeWidth={3} name="Nastrój" />
+                                                    <Line type="monotone" dataKey="stress" stroke="#f59e0b" strokeWidth={2} name="Stres" />
+                                                    <Line type="monotone" dataKey="energy" stroke="#10b981" strokeWidth={2} name="Energia" />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        <div className="grid md:grid-cols-2 gap-8">
+                                            <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                                <h3 className="text-xl font-semibold mb-4">Rozkład emocji</h3>
+                                                {pie.length > 0 ? (
+                                                    <ResponsiveContainer width="100%" height={300}>
+                                                        <PieChart>
+                                                            <Pie data={pie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                                                                {pie.map((entry, index) => (
+                                                                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                                                                ))}
+                                                            </Pie>
+                                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+                                                        </PieChart>
+                                                    </ResponsiveContainer>
+                                                ) : (
+                                                    <p className="text-gray-400 text-center py-8">Brak danych</p>
+                                                )}
+                                            </div>
+                                            <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                                <h3 className="text-xl font-semibold mb-4">Najczęstsze tagi</h3>
+                                                {bar.length > 0 ? (
+                                                    <ResponsiveContainer width="100%" height={300}>
+                                                        <BarChart data={bar}>
+                                                            <XAxis dataKey="name" stroke="#94a3b8" />
+                                                            <YAxis stroke="#94a3b8" />
+                                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+                                                            <Bar dataKey="count" fill="#06b6d4" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                ) : (
+                                                    <p className="text-gray-400 text-center py-8">Brak danych</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                            <h3 className="text-xl font-semibold mb-4">📊 Insights</h3>
+                                            <div className="space-y-3">
+                                                <p className="text-gray-300">💡 Najlepszy dzień: {line.length > 0 ? `Dzień ${line.reduce((max, e) => e.mood > max.mood ? e : max).day}` : 'N/A'}</p>
+                                                <p className="text-gray-300">🎯 Średni poziom stresu: {entries.length > 0 ? Math.round(entries.reduce((s, e) => s + e.stress, 0) / entries.length) : 0}</p>
+                                                <p className="text-gray-300">⚡ Średnia energia: {entries.length > 0 ? Math.round(entries.reduce((s, e) => s + e.energy, 0) / entries.length) : 0}</p>
+                                                <p className="text-gray-300">😴 Średni sen: {entries.length > 0 ? (entries.reduce((s, e) => s + e.sleep, 0) / entries.length).toFixed(1) : 0}h</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white/5 backdrop-blur-sm p-12 rounded-xl border border-white/10 text-center">
+                                        <div className="text-6xl mb-4">📊</div>
+                                        <p className="text-xl text-gray-400 mb-4">Brak danych do wyświetlenia</p>
+                                        <p className="text-gray-500 mb-6">Dodaj wpisy aby zobaczyć statystyki</p>
+                                        <button onClick={() => setPage('new-entry')} className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition">Dodaj wpis</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'blog') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex">
+                        <Sidebar />
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-6xl mx-auto">
+                                <h2 className="text-3xl font-bold mb-8">Blog</h2>
+                                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {blogs.map(blog => (
+                                        <div key={blog.id} className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden hover:border-cyan-500/50 transition cursor-pointer">
+                                            <div className="p-8 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 text-center text-6xl">
+                                                {blog.id === 1 ? '🧘' : blog.id === 2 ? '🌱' : '😴'}
+                                            </div>
+                                            <div className="p-6">
+                                                <span className="text-xs text-cyan-400 font-medium">{blog.category}</span>
+                                                <h3 className="text-xl font-bold mb-2 mt-1">{blog.title}</h3>
+                                                <p className="text-gray-400 text-sm mb-4">{blog.excerpt}</p>
+                                                <p className="text-xs text-gray-500">{new Date(blog.date).toLocaleDateString('pl-PL')}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-8 bg-white/5 backdrop-blur-sm p-8 rounded-xl border border-white/10 text-center">
+                                    <h3 className="text-2xl font-bold mb-4">📰 Newsletter</h3>
+                                    <p className="text-gray-400 mb-6">Zapisz się na newsletter aby otrzymywać nowe artykuły</p>
+                                    <div className="flex gap-4 max-w-md mx-auto">
+                                        <input type="email" placeholder="twoj@email.com" className="flex-1 px-4 py-3 bg-white/10 rounded-lg border border-white/20 focus:border-cyan-500 outline-none text-white" />
+                                        <button className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition">Zapisz się</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (page === 'profile') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white flex">
+                        <Sidebar />
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-4xl mx-auto">
+                                <h2 className="text-3xl font-bold mb-8">Profil</h2>
+                                <div className="space-y-6">
+                                    <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                        <h3 className="text-xl font-semibold mb-4">Informacje o koncie</h3>
+                                        <div className="space-y-3">
+                                            <div>
+                                                <p className="text-sm text-gray-400">Imię</p>
+                                                <p className="text-lg font-semibold">{user?.name}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm text-gray-400">Email</p>
+                                                <p className="text-lg font-semibold">{user?.email}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm text-gray-400">Dołączył/a</p>
+                                                <p className="text-lg font-semibold">{user?.createdAt ? new Date(user.createdAt).toLocaleDateString('pl-PL') : 'N/A'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                        <h3 className="text-xl font-semibold mb-4">Zarządzanie danymi</h3>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <p className="text-gray-300 mb-3">Eksportuj wszystkie swoje dane jako backup</p>
+                                                <button onClick={exportData} className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition flex items-center gap-2">
+                                                    <Icon name="download" size={20} />
+                                                    Eksportuj dane (JSON)
+                                                </button>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-300 mb-3">Importuj dane z backupu</p>
+                                                <label className="px-6 py-3 bg-white/10 rounded-lg font-semibold hover:bg-white/20 transition cursor-pointer inline-flex items-center gap-2">
+                                                    <Icon name="upload" size={20} />
+                                                    Importuj dane
+                                                    <input type="file" accept=".json" onChange={importData} className="hidden" />
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-red-500/10 border border-red-500/30 p-6 rounded-xl">
+                                        <h3 className="text-xl font-semibold mb-4 text-red-400">Strefa niebezpieczna</h3>
+                                        <p className="text-gray-300 mb-4">Usuń wszystkie swoje dane. Tej operacji nie można cofnąć!</p>
+                                        <button onClick={() => {
+                                            if (window.confirm('Czy na pewno chcesz usunąć WSZYSTKIE dane? Tej operacji nie można cofnąć!')) {
+                                                if (window.confirm('Ostatnia szansa! Naprawdę usunąć?')) {
+                                                    localStorage.removeItem(`entries_${user.id}`);
+                                                    setEntries([]);
+                                                    alert('Wszystkie dane zostały usunięte');
+                                                }
+                                            }
+                                        }} className="px-6 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500 rounded-lg font-semibold transition flex items-center gap-2 text-red-400">
+                                            <Icon name="trash-2" size={20} />
+                                            Usuń wszystkie dane
+                                        </button>
+                                    </div>
+                                    <div className="bg-white/5 backdrop-blur-sm p-6 rounded-xl border border-white/10">
+                                        <h3 className="text-xl font-semibold mb-4">🔒 Prywatność</h3>
+                                        <div className="space-y-3 text-gray-300">
+                                            <p>✅ Wszystkie dane przechowywane tylko lokalnie</p>
+                                            <p>✅ Żadnych serwerów zewnętrznych</p>
+                                            <p>✅ Żadnego śledzenia</p>
+                                            <p>✅ Żadnych cookies</p>
+                                            <p>✅ 100% prywatności</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return <div>Strona nie znaleziona</div>;
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
