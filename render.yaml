@@ -2,7 +2,7 @@
 # render.yaml
 
 # Definiuje, że jest to plik manifestu Render
-yaml-spec: 1
+
 
 # Lista usług do wdrożenia
 services:
